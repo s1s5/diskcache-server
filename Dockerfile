@@ -1,15 +1,15 @@
 FROM python:3.10-slim
 
-RUN mkdir /data
-RUN chown app:app /data
-VOLUME /data
-
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV POETRY_VIRTUALENVS_CREATE=false
 
 RUN groupadd -g 999 app
 RUN adduser --no-create-home --uid 999 --ingroup app app
+
+RUN mkdir /data
+RUN chown app:app /data
+VOLUME /data
 
 USER root
 WORKDIR /opt/app
