@@ -105,3 +105,10 @@ async def put_raw(name: str, request: Request) -> Response:
     except ValueSizeLimitExceeded:
         raise HTTPException(status_code=403, detail="size limit exceeded")
     return Response(status_code=200)
+
+
+@app.delete("/{name}")
+def delete_content(name: str) -> Response:
+    if not _cache.delete(name):
+        return Response(status_code=404)
+    return Response(status_code=200)
