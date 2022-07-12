@@ -20,6 +20,7 @@ mypy = "^0.950"
 pre-commit = "^2.19.0"
 radon = "^5.1.0"
 pyproject-flake8 = "^0.0.1-alpha.4"
+types-aiofiles = "^0.8.9"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -4,8 +4,6 @@ import os
 import pickle
 import time
 import uuid
-from queue import Empty, Full, Queue
-from typing import IO, AsyncGenerator, Iterable
 
 import aiofiles
 import aiofiles.os
@@ -47,6 +45,8 @@ class CustomDisk(diskcache.Disk):
                 if not chunk:
                     break
                 size += len(chunk)
+                if size > VALUE_SIZE_LIMIT:
+                    raise ValueSizeLimitExceeded()
                 await f.write(chunk)
         return size, diskcache.core.MODE_BINARY, filename, None
 
@@ -117,96 +117,13 @@ RESPONSE_CHUNK_SIZE = 4 << 20
 PUT_TIMEOUT = eval(os.environ.get("REQUEST_TIMEOUT", "3 * 60"))  # 3min
 
 
-def file_iterator(fp: IO[bytes]) -> Iterable[bytes]:
-    while data := fp.read(RESPONSE_CHUNK_SIZE):
-        yield data
-    if hasattr(fp, "close"):
-        fp.close()
-
-
 @app.get("/{name}")
 async def get_raw(name: str) -> Response:
-    # reader = _cache.get(name, read=True)
-    # if reader is None:
-    #     raise HTTPException(status_code=404)
-    # return StreamingResponse(file_iterator(reader))
     return StreamingResponse(await _cache.get(name, read=True))
-
-
-class AsyncGeneratorReader:
-    _queue: Queue[bytes]
-
-    def __init__(self, loop: asyncio.AbstractEventLoop, generator: AsyncGenerator[bytes, None]):
-        self._loop = loop
-        self._generator = generator
-        self._event = asyncio.Event()
-        self._queue = Queue(maxsize=10)
-
-    async def _async_queue_put(self, data: bytes, max_try_cnt: int = 100000, tick_tock: float = 0.01):
-        for i in range(max_try_cnt):
-            if self._event.is_set():
-                raise Exception("request already exitted")
-            try:
-                # awaitしないとthreadを占有してしまう
-                print(">>> waiting put", self._queue)
-                await asyncio.to_thread(self._queue.put, data, timeout=tick_tock)
-            except Full:
-                print(">>> put failed", self._queue)
-                pass
-            else:
-                print(">>> put complete", self._queue)
-                break
-
-    async def read_request(self):
-        print("read request start", self._queue)
-        size = 0
-        try:
-            async for chunk in self._generator:
-                print(">>> reading chunk", len(chunk), self._queue)
-                size += len(chunk)
-                if size > VALUE_SIZE_LIMIT:
-                    await self._async_queue_put(b"")
-                    raise ValueSizeLimitExceeded()
-
-                await self._async_queue_put(chunk)
-        finally:
-            await asyncio.to_thread(self._queue.join)
-        print("read request end", self._queue)
-
-    def read(self, bytes: int) -> bytes:
-        print("reading content", self._queue)
-        try:
-            while not self._event.is_set():
-                try:
-                    print("<<< wait queue", self._queue)
-                    return self._queue.get(timeout=1)
-                except Empty:
-                    print("<<< queue get failed", self._queue)
-                    pass
-        finally:
-            print("queue task done", self._queue)
-            self._queue.task_done()
-        return b""
 
 
 @app.put("/{name}")
 async def put_raw(name: str, request: Request) -> Response:
-    # event_loop = asyncio.get_event_loop()
-    # reader = AsyncGeneratorReader(event_loop, request.stream())
-    # try:
-    #     await asyncio.wait_for(
-    #         asyncio.gather(
-    #             reader.read_request(),
-    #             asyncio.to_thread(lambda: _cache.set(name, reader, expire=DEFAULT_EXPIRE, read=True)),
-    #         ),
-    #         timeout=PUT_TIMEOUT,
-    #     )
-    # except asyncio.exceptions.TimeoutError:
-    #     raise HTTPException(status_code=503, detail="process timeout")
-    # except ValueSizeLimitExceeded:
-    #     raise HTTPException(status_code=403, detail="size limit exceeded")
-    # finally:
-    #     reader._event.set()
     await _cache.aset(name, request.stream(), expire=DEFAULT_EXPIRE, read=True)
     return Response(status_code=200)
 
