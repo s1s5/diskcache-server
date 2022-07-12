@@ -1,8 +1,9 @@
 import asyncio
+import logging
 import os
 import pickle
-import threading
-from queue import Queue
+import uuid
+from queue import Empty, Full, Queue
 from typing import IO, AsyncGenerator, Iterable
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -16,6 +17,15 @@ app = FastAPI()
 class ValueSizeLimitExceeded(Exception):
     pass
 
+
+# Define the filter
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.args and len(record.args) >= 3 and record.args[2] != "/-/healthcheck/"  # type: ignore
+
+
+# Add filter to the logger
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 # class CustomCache(diskcache.Cache):
 #     def __init__(self, directory=None, timeout=60, disk=diskcache.Disk, **settings):
@@ -68,8 +78,19 @@ class AsyncGeneratorReader:
     def __init__(self, loop: asyncio.AbstractEventLoop, generator: AsyncGenerator[bytes, None]):
         self._loop = loop
         self._generator = generator
-        self._event = threading.Event()
+        self._event = asyncio.Event()
         self._queue = Queue(maxsize=10)
+
+    async def _async_queue_put(self, data: bytes, max_try_cnt: int = 100000, tick_tock: float = 0.01):
+        for i in range(max_try_cnt):
+            if self._event.is_set():
+                raise Exception("request already exitted")
+            try:
+                self._queue.put(data, timeout=tick_tock)
+            except Full:
+                pass
+            else:
+                break
 
     async def read_request(self):
         size = 0
@@ -77,17 +98,23 @@ class AsyncGeneratorReader:
             async for chunk in self._generator:
                 size += len(chunk)
                 if size > VALUE_SIZE_LIMIT:
-                    await asyncio.to_thread(self._queue.put, b"")
+                    await self._async_queue_put(b"")
                     raise ValueSizeLimitExceeded()
-                await asyncio.to_thread(self._queue.put, chunk)
+
+                await self._async_queue_put(chunk)
         finally:
-            await asyncio.to_thread(self._queue.join)
+            self._queue.join()
 
     def read(self, bytes: int) -> bytes:
         try:
-            return self._queue.get()
+            while not self._event.is_set():
+                try:
+                    return self._queue.get(timeout=1)
+                except Empty:
+                    pass
         finally:
             self._queue.task_done()
+        return b""
 
 
 @app.put("/{name}")
@@ -102,8 +129,12 @@ async def put_raw(name: str, request: Request) -> Response:
             ),
             timeout=PUT_TIMEOUT,
         )
+    except asyncio.exceptions.TimeoutError:
+        raise HTTPException(status_code=503, detail="process timeout")
     except ValueSizeLimitExceeded:
         raise HTTPException(status_code=403, detail="size limit exceeded")
+    finally:
+        reader._event.set()
     return Response(status_code=200)
 
 
@@ -111,4 +142,18 @@ async def put_raw(name: str, request: Request) -> Response:
 def delete_content(name: str) -> Response:
     if not _cache.delete(name):
         return Response(status_code=404)
+    return Response(status_code=200)
+
+
+@app.post("/-/flushall/")
+def clear_all_content():
+    return Response(status_code=200, content=f"clear: {_cache.clear()}")
+
+
+@app.get("/-/healthcheck/")
+def healthcheck():
+    key = uuid.uuid4().hex
+    _cache.set(key, key)
+    _cache.get(key)
+    _cache.delete(key)
     return Response(status_code=200)
