@@ -86,7 +86,8 @@ class AsyncGeneratorReader:
             if self._event.is_set():
                 raise Exception("request already exitted")
             try:
-                self._queue.put(data, timeout=tick_tock)
+                # awaitしないとthreadを占有してしまう
+                await asyncio.to_thread(self._queue.put, data, timeout=tick_tock)
             except Full:
                 pass
             else:
@@ -103,7 +104,7 @@ class AsyncGeneratorReader:
 
                 await self._async_queue_put(chunk)
         finally:
-            self._queue.join()
+            await asyncio.to_thread(self._queue.join)
 
     def read(self, bytes: int) -> bytes:
         try:
