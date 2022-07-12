@@ -7,7 +7,7 @@ import uuid
 
 import aiofiles
 import aiofiles.os
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 import diskcache
@@ -119,7 +119,10 @@ PUT_TIMEOUT = eval(os.environ.get("REQUEST_TIMEOUT", "3 * 60"))  # 3min
 
 @app.get("/{name}")
 async def get_raw(name: str) -> Response:
-    return StreamingResponse(await _cache.get(name, read=True))
+    value = _cache.get(name, read=True)
+    if value is None:
+        raise HTTPException(status_code=404)
+    return StreamingResponse(await value)
 
 
 @app.put("/{name}")
