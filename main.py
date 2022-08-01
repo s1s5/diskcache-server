@@ -117,12 +117,18 @@ RESPONSE_CHUNK_SIZE = 4 << 20
 PUT_TIMEOUT = eval(os.environ.get("REQUEST_TIMEOUT", "3 * 60"))  # 3min
 
 
+async def read_all(opened_file):
+    async with opened_file as fp:
+        while chunk := await fp.read(1 << 18):
+            yield chunk
+
+
 @app.get("/{name}")
 async def get_raw(name: str) -> Response:
     value = _cache.get(name, read=True)
     if value is None:
         raise HTTPException(status_code=404)
-    return StreamingResponse(await value)
+    return StreamingResponse(read_all(value))
 
 
 @app.put("/{name}")
