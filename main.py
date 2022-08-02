@@ -1,4 +1,5 @@
 import asyncio
+import gzip
 import logging
 import os
 import pickle
@@ -9,6 +10,8 @@ import aiofiles
 import aiofiles.os
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Gauge, generate_latest
+from prometheus_fastapi_instrumentator import Instrumentator as PrometheusInstrumentator
 
 import diskcache
 
@@ -111,6 +114,11 @@ _cache = CustomCache(
     disk_pickle_protocol=pickle.HIGHEST_PROTOCOL,
 )
 
+_cache_hits = Counter("diskcache_cache_hits", "num cache hits")
+_cache_misses = Counter("diskcache_cache_misses", "num cache misses")
+_cache_len = Gauge("diskcache_cache_len", "Count of items in cache including expired items")
+_cache_volume = Gauge("diskcache_cache_volume", "total size of cache on disk")
+
 VALUE_SIZE_LIMIT = eval(os.environ.get("VALUE_SIZE_LIMIT", "300 << 20"))
 DEFAULT_EXPIRE = eval(os.environ.get("DEFAULT_EXPIRE", "24 * 60 * 60"))  # 1day
 RESPONSE_CHUNK_SIZE = 4 << 20
@@ -156,3 +164,25 @@ def healthcheck():
     _cache.get(key)
     _cache.delete(key)
     return Response(status_code=200)
+
+
+@app.get("/-/metrics/")
+def metrics(request: Request):
+    hits, misses = _cache.stats(enable=True, reset=True)
+    _cache_hits.inc(hits)
+    _cache_misses.inc(misses)
+    _cache_len.set(len(_cache))
+    _cache_volume.set(_cache.volume())
+
+    if "gzip" in request.headers.get("Accept-Encoding", ""):
+        resp = Response(content=gzip.compress(generate_latest(REGISTRY)))
+        resp.headers["Content-Type"] = CONTENT_TYPE_LATEST
+        resp.headers["Content-Encoding"] = "gzip"
+        return resp
+    else:
+        resp = Response(content=generate_latest(REGISTRY))
+        resp.headers["Content-Type"] = CONTENT_TYPE_LATEST
+    return resp
+
+
+PrometheusInstrumentator().instrument(app)

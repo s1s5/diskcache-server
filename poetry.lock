@@ -297,6 +297,36 @@ toml = "*"
 virtualenv = ">=20.0.8"
 
 [[package]]
+name = "prometheus-client"
+version = "0.14.1"
+description = "Python client for the Prometheus monitoring system."
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.extras]
+twisted = ["twisted"]
+
+[[package]]
+name = "prometheus-fastapi-instrumentator"
+version = "5.8.2"
+description = "Instrument your FastAPI with Prometheus metrics"
+category = "main"
+optional = false
+python-versions = ">= 3.7.0, < 4.0.0"
+develop = false
+
+[package.dependencies]
+fastapi = ">= 0.38.1, < 1.0.0"
+prometheus-client = ">= 0.8.0, < 1.0.0"
+
+[package.source]
+type = "git"
+url = "https://github.com/s1s5/prometheus-fastapi-instrumentator.git"
+reference = "master"
+resolved_reference = "a726c63229d59c145a9b310bf5a60ffcef350cbc"
+
+[[package]]
 name = "pycodestyle"
 version = "2.8.0"
 description = "Python style guide checker"
@@ -459,7 +489,7 @@ testing = ["coverage (>=4)", "coverage-enable-subprocess (>=1)", "flaky (>=3)", 
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "718e3e589523d5d383d4aeaff7fe72527d66f19fd5df4545b0552871e6db978a"
+content-hash = "e6ed4f910c187ea0a28c2e382ebd76f55701f4516ba314a5e0b1afa10dc583da"
 
 [metadata.files]
 aiofiles = [
@@ -606,6 +636,11 @@ pre-commit = [
     {file = "pre_commit-2.19.0-py2.py3-none-any.whl", hash = "sha256:10c62741aa5704faea2ad69cb550ca78082efe5697d6f04e5710c3c229afdd10"},
     {file = "pre_commit-2.19.0.tar.gz", hash = "sha256:4233a1e38621c87d9dda9808c6606d7e7ba0e087cd56d3fe03202a01d2919615"},
 ]
+prometheus-client = [
+    {file = "prometheus_client-0.14.1-py3-none-any.whl", hash = "sha256:522fded625282822a89e2773452f42df14b5a8e84a86433e3f8a189c1d54dc01"},
+    {file = "prometheus_client-0.14.1.tar.gz", hash = "sha256:5459c427624961076277fdc6dc50540e2bacb98eebde99886e59ec55ed92093a"},
+]
+prometheus-fastapi-instrumentator = []
 pycodestyle = [
     {file = "pycodestyle-2.8.0-py2.py3-none-any.whl", hash = "sha256:720f8b39dde8b293825e7ff02c475f3077124006db4f440dcbc9a20b76548a20"},
     {file = "pycodestyle-2.8.0.tar.gz", hash = "sha256:eddd5847ef438ea1c7870ca7eb78a9d47ce0cdb4851a5523949f2601d0cbbe7f"},
