@@ -124,6 +124,8 @@ DEFAULT_EXPIRE = eval(os.environ.get("DEFAULT_EXPIRE", "24 * 60 * 60"))  # 1day
 RESPONSE_CHUNK_SIZE = 4 << 20
 PUT_TIMEOUT = eval(os.environ.get("REQUEST_TIMEOUT", "3 * 60"))  # 3min
 
+EXPIRE_HEADER = "x-diskcache-expire"
+
 
 async def read_all(opened_file):
     async with opened_file as fp:
@@ -141,7 +143,8 @@ async def get_raw(name: str) -> Response:
 
 @app.put("/{name}")
 async def put_raw(name: str, request: Request) -> Response:
-    await _cache.aset(name, request.stream(), expire=DEFAULT_EXPIRE, read=True)
+    expire = int(request.headers.get(EXPIRE_HEADER, DEFAULT_EXPIRE))
+    await _cache.aset(name, request.stream(), expire=expire, read=True)
     return Response(status_code=200)
 
 
