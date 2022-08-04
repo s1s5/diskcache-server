@@ -113,6 +113,7 @@ _cache = CustomCache(
     disk_min_file_size=2 << 15,  # 32kb
     disk_pickle_protocol=pickle.HIGHEST_PROTOCOL,
 )
+_cache.stats(enable=True)
 
 _cache_hits = Counter("diskcache_cache_hits", "num cache hits")
 _cache_misses = Counter("diskcache_cache_misses", "num cache misses")
