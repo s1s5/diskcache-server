@@ -1,8 +1,10 @@
 import asyncio
 import gzip
+import io
 import logging
 import os
 import pickle
+import re
 import time
 import uuid
 
@@ -24,8 +26,10 @@ class ValueSizeLimitExceeded(Exception):
 
 # Define the filter
 class EndpointFilter(logging.Filter):
+    xp = re.compile("/-/.*/")
+
     def filter(self, record: logging.LogRecord) -> bool:
-        return record.args and len(record.args) >= 3 and record.args[2] != "/-/healthcheck/"  # type: ignore
+        return record.args and len(record.args) >= 3 and (not self.xp.match(record.args[2]))  # type: ignore
 
 
 # Add filter to the logger
@@ -164,7 +168,7 @@ def clear_all_content():
 @app.get("/-/healthcheck/")
 def healthcheck():
     key = uuid.uuid4().hex
-    _cache.set(key, key)
+    _cache.set(key, io.BytesIO(key.encode("ascii")), read=True)
     _cache.get(key)
     _cache.delete(key)
     return Response(status_code=200)
