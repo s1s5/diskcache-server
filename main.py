@@ -53,7 +53,7 @@ def create_tag_from_request(request: Request):
         tag["Content-Type"] = request.headers["content-type"]
 
     if request.headers.get("content-encoding"):
-        tag["Content-Encoding"] = request.headers["content-Encoding"]
+        tag["Content-Encoding"] = request.headers["content-encoding"]
     return tag
 
 
