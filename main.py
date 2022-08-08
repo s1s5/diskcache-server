@@ -1,5 +1,7 @@
 import asyncio
+import datetime
 import gzip
+import hashlib
 import io
 import logging
 import os
@@ -7,6 +9,7 @@ import pickle
 import re
 import time
 import uuid
+from typing import Dict
 
 import aiofiles
 import aiofiles.os
@@ -35,6 +38,24 @@ class EndpointFilter(logging.Filter):
 # Add filter to the logger
 logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
+DATETIME_FORMAT = "%a, %d %b %Y %H:%M:%S GMT"
+
+
+def create_tag_from_request(request: Request):
+    tag: Dict[str, str] = {
+        "Last-Modified": datetime.datetime.now(tz=datetime.timezone.utc).strftime(DATETIME_FORMAT),
+    }
+
+    if request.headers.get("x-set-cache-control"):
+        tag["Cache-Control"] = request.headers["x-set-cache-control"]
+
+    if request.headers.get("content-type"):
+        tag["Content-Type"] = request.headers["content-type"]
+
+    if request.headers.get("content-encoding"):
+        tag["Content-Encoding"] = request.headers["content-Encoding"]
+    return tag
+
 
 class CustomDisk(diskcache.Disk):
     def fetch(self, mode, filename, value, read):
@@ -45,6 +66,7 @@ class CustomDisk(diskcache.Disk):
 
         filename, full_path = self.filename(key, value)
         await aiofiles.os.makedirs(os.path.split(full_path)[0], exist_ok=True)
+        hasher = hashlib.sha256()
 
         size = 0
         async with aiofiles.open(full_path, "xb") as f:
@@ -54,21 +76,24 @@ class CustomDisk(diskcache.Disk):
                 size += len(chunk)
                 if size > VALUE_SIZE_LIMIT:
                     raise ValueSizeLimitExceeded()
+                hasher.update(chunk)
                 await f.write(chunk)
-        return size, diskcache.core.MODE_BINARY, filename, None
+        return size, diskcache.core.MODE_BINARY, filename, None, hasher.hexdigest()
 
 
 class CustomCache(diskcache.Cache):
     _disk: CustomDisk
 
-    async def aset(self, key, value, expire=None, read=False, tag=None, retry=False):
+    async def aset(self, key, value, *, expire=None, read=False, tag: Dict[str, str], retry=False):
         assert read
-        size, mode, filename, db_value = await self._disk.astore(value, read, key=key)
+        size, mode, filename, db_value, digest = await self._disk.astore(value, read, key=key)
+        tag["Content-Length"] = str(size)
+        tag["Etag"] = digest
         await asyncio.to_thread(
             self._aset_transaction,
             key=key,
             expire=expire,
-            tag=tag,
+            tag=pickle.dumps(tag),
             retry=retry,
             size=size,
             mode=mode,
@@ -139,17 +164,29 @@ async def read_all(opened_file):
 
 
 @app.get("/{name}")
-async def get_raw(name: str) -> Response:
-    value = _cache.get(name, read=True)
+async def get_raw(name: str, request: Request) -> Response:
+    value, _expire, _tag = _cache.get(name, read=True, expire_time=True, tag=True)
+
     if value is None:
         raise HTTPException(status_code=404)
-    return StreamingResponse(read_all(value))
+
+    if not (_expire and _tag):
+        return StreamingResponse(read_all(value))
+
+    expire = datetime.datetime.fromtimestamp(_expire, datetime.timezone.utc)
+    tag = pickle.loads(_tag)
+    headers = dict(**tag)
+    headers["Expire"] = expire.strftime(DATETIME_FORMAT)
+    if request.headers.get("If-None-Match"):
+        if tag.get("Etag") == request.headers.get("If-None-Match"):
+            return Response(status_code=304, headers=headers)
+    return StreamingResponse(read_all(value), headers=headers)
 
 
 @app.put("/{name}")
 async def put_raw(name: str, request: Request) -> Response:
     expire = int(request.headers.get(EXPIRE_HEADER, DEFAULT_EXPIRE))
-    await _cache.aset(name, request.stream(), expire=expire, read=True)
+    await _cache.aset(name, request.stream(), expire=expire, read=True, tag=create_tag_from_request(request))
     return Response(status_code=200)
 
 

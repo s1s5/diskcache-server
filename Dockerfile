@@ -30,6 +30,10 @@ WORKDIR /usr/src/app
 RUN groupadd -g 999 app && \
     useradd -d /usr/src/app -s /bin/bash -u 999 -g 999 app
 
+VOLUME /data
+RUN chown -R app:app /data
+ENV CACHE_DIRECTORY /data
+
 COPY --from=builder /runtime /usr/local
 COPY main.py ./
 
