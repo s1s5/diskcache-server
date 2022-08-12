@@ -12,6 +12,8 @@ fastapi = "^0.78.0"
 diskcache = "^5.4.0"
 aiofiles = "^0.8.0"
 prometheus-fastapi-instrumentator = {git = "https://github.com/s1s5/prometheus-fastapi-instrumentator.git"}
+pytest = "^7.1.2"
+coverage = "^6.4.3"
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"

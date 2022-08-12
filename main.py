@@ -7,9 +7,10 @@ import logging
 import os
 import pickle
 import re
+import sqlite3
 import time
 import uuid
-from typing import Dict
+from typing import Dict, Optional
 
 import aiofiles
 import aiofiles.os
@@ -21,6 +22,10 @@ from prometheus_fastapi_instrumentator import Instrumentator as PrometheusInstru
 import diskcache
 
 app = FastAPI()
+
+
+class SizeDifferentException(Exception):
+    pass
 
 
 class ValueSizeLimitExceeded(Exception):
@@ -57,12 +62,58 @@ def create_tag_from_request(request: Request):
     return tag
 
 
+class DummyReader:
+    class It:
+        def __init__(self, byte_data: bytes):
+            self.byte_data = byte_data
+
+        async def read(self, length):
+            data = self.byte_data
+            self.byte_data = b""
+            return data
+
+    def __init__(self, byte_data: bytes):
+        self.byte_data = byte_data
+
+    async def __aenter__(self):
+        return self.It(self.byte_data)
+
+    async def __aexit__(self, *args, **kwargs):
+        pass
+
+
 class CustomDisk(diskcache.Disk):
     def fetch(self, mode, filename, value, read):
+        if mode == diskcache.core.MODE_RAW:
+            return DummyReader(bytes(value) if type(value) is sqlite3.Binary else value)
+
         return aiofiles.open(os.path.join(self._directory, filename), "rb")
 
-    async def astore(self, value, read, key=diskcache.UNKNOWN):
+    async def _astore_raw(self, value, content_length: int):
+        byte_data, size = b"", 0
+        async for chunk in value:
+            if not chunk:
+                break
+            size += len(chunk)
+            byte_data += chunk
+            if size > content_length:
+                raise SizeDifferentException()
+        if size != content_length:
+            raise SizeDifferentException()
+        return (
+            0,
+            diskcache.core.MODE_RAW,
+            None,
+            sqlite3.Binary(byte_data),
+            hashlib.sha256(byte_data).hexdigest(),
+        )
+
+    async def astore(self, value, read, key=diskcache.UNKNOWN, content_length: Optional[int] = None):
         assert read
+
+        # 小さいものはDBに格納
+        if (content_length is not None) and content_length < self.min_file_size:
+            return await self._astore_raw(value=value, content_length=content_length)
 
         filename, full_path = self.filename(key, value)
         await aiofiles.os.makedirs(os.path.split(full_path)[0], exist_ok=True)
@@ -78,15 +129,30 @@ class CustomDisk(diskcache.Disk):
                     raise ValueSizeLimitExceeded()
                 hasher.update(chunk)
                 await f.write(chunk)
+
+        if (content_length is not None) and size != content_length:
+            raise SizeDifferentException()
         return size, diskcache.core.MODE_BINARY, filename, None, hasher.hexdigest()
 
 
 class CustomCache(diskcache.Cache):
     _disk: CustomDisk
 
-    async def aset(self, key, value, *, expire=None, read=False, tag: Dict[str, str], retry=False):
+    async def aset(
+        self,
+        key,
+        value,
+        *,
+        expire=None,
+        read=False,
+        tag: Dict[str, str],
+        retry=False,
+        content_length: Optional[int] = None,
+    ):
         assert read
-        size, mode, filename, db_value, digest = await self._disk.astore(value, read, key=key)
+        size, mode, filename, db_value, digest = await self._disk.astore(
+            value, read, key=key, content_length=content_length
+        )
         tag["Content-Length"] = str(size)
         tag["Etag"] = digest
         await asyncio.to_thread(
@@ -137,9 +203,9 @@ _cache = CustomCache(
     sqlite_auto_vacuum=1,  # FULL
     sqlite_cache_size=2 << 13,  # 8,192 pages
     sqlite_journal_mode="wal",
-    sqlite_mmap_size=2 << 26,  # 64mb
+    sqlite_mmap_size=1 << 27,  # 128mb
     sqlite_synchronous=1,  # NORMAL
-    disk_min_file_size=2 << 15,  # 32kb
+    disk_min_file_size=1 << 15,  # 32kb
     disk_pickle_protocol=pickle.HIGHEST_PROTOCOL,
 )
 _cache.stats(enable=True)
@@ -186,7 +252,28 @@ async def get_raw(name: str, request: Request) -> Response:
 @app.put("/{name}")
 async def put_raw(name: str, request: Request) -> Response:
     expire = int(request.headers.get(EXPIRE_HEADER, DEFAULT_EXPIRE))
-    await _cache.aset(name, request.stream(), expire=expire, read=True, tag=create_tag_from_request(request))
+    try:
+        if "content-length" in request.headers:
+            content_length = int(request.headers["content-length"])
+        else:
+            content_length = None
+    except ValueError:
+        return Response(content="invalid Content-Length value", status_code=400)
+
+    try:
+        await _cache.aset(
+            name,
+            request.stream(),
+            expire=expire,
+            read=True,
+            tag=create_tag_from_request(request),
+            content_length=content_length,
+        )
+    except ValueSizeLimitExceeded:
+        return Response(content="size limit exceeded", status_code=400)
+    except SizeDifferentException:
+        return Response(content="content-length different", status_code=400)
+
     return Response(status_code=200)
 
 
