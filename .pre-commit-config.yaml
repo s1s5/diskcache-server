@@ -52,3 +52,13 @@ repos:
           - --check-only
         additional_dependencies:
           - toml
+
+  - repo: local
+    hooks:
+      - id: unit-test
+        language: system
+        name: unit test
+        entry: pytest
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
