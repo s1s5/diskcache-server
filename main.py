@@ -101,7 +101,7 @@ class CustomDisk(diskcache.Disk):
         if size != content_length:
             raise SizeDifferentException()
         return (
-            0,
+            size,
             diskcache.core.MODE_RAW,
             None,
             sqlite3.Binary(byte_data),
