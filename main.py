@@ -62,30 +62,10 @@ def create_tag_from_request(request: Request):
     return tag
 
 
-class DummyReader:
-    class It:
-        def __init__(self, byte_data: bytes):
-            self.byte_data = byte_data
-
-        async def read(self, length):
-            data = self.byte_data
-            self.byte_data = b""
-            return data
-
-    def __init__(self, byte_data: bytes):
-        self.byte_data = byte_data
-
-    async def __aenter__(self):
-        return self.It(self.byte_data)
-
-    async def __aexit__(self, *args, **kwargs):
-        pass
-
-
 class CustomDisk(diskcache.Disk):
     def fetch(self, mode, filename, value, read):
         if mode == diskcache.core.MODE_RAW:
-            return DummyReader(bytes(value) if type(value) is sqlite3.Binary else value)
+            return bytes(value) if type(value) is sqlite3.Binary else value
 
         return aiofiles.open(os.path.join(self._directory, filename), "rb")
 
@@ -224,28 +204,29 @@ EXPIRE_HEADER = "x-diskcache-expire"
 
 
 async def read_all(opened_file):
-    async with opened_file as fp:
-        while chunk := await fp.read(1 << 18):
-            yield chunk
+    if isinstance(opened_file, bytes):
+        yield opened_file
+    else:
+        async with opened_file as fp:
+            while chunk := await fp.read(1 << 18):
+                yield chunk
 
 
 @app.get("/{name}")
 async def get_raw(name: str, request: Request) -> Response:
-    value, _expire, _tag = _cache.get(name, read=True, expire_time=True, tag=True)
+    value, _expire, _tag = await asyncio.to_thread(_cache.get, name, read=True, expire_time=True, tag=True)
+
+    expire = datetime.datetime.fromtimestamp(_expire, datetime.timezone.utc) if _expire else None
+    tag = pickle.loads(_tag) if _tag else {}
+    headers = dict(**tag)
+    if expire:
+        headers["Expire"] = expire.strftime(DATETIME_FORMAT)
 
     if value is None:
         raise HTTPException(status_code=404)
+    elif tag.get("Etag", "no-etag-found") == request.headers.get("If-None-Match"):
+        return Response(status_code=304, headers=headers)
 
-    if not (_expire and _tag):
-        return StreamingResponse(read_all(value))
-
-    expire = datetime.datetime.fromtimestamp(_expire, datetime.timezone.utc)
-    tag = pickle.loads(_tag)
-    headers = dict(**tag)
-    headers["Expire"] = expire.strftime(DATETIME_FORMAT)
-    if request.headers.get("If-None-Match"):
-        if tag.get("Etag") == request.headers.get("If-None-Match"):
-            return Response(status_code=304, headers=headers)
     return StreamingResponse(read_all(value), headers=headers)
 
 
