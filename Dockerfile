@@ -25,17 +25,19 @@ RUN pip install --prefix=/runtime --force-reinstall -r requirements.txt
 
 # ---------- runtime ----------
 FROM python:3.10-slim as runtime
+ENV CACHE_DIRECTORY /data
 
 WORKDIR /usr/src/app
 RUN groupadd -g 999 app && \
     useradd -d /usr/src/app -s /bin/bash -u 999 -g 999 app
 
-VOLUME /data
+RUN mkdir -p /data
 RUN chown -R app:app /data
-ENV CACHE_DIRECTORY /data
 
 COPY --from=builder /runtime /usr/local
 COPY main.py ./
 
 USER app
-CMD gunicorn main:app -b 0.0.0.0:8000 -w 1 -k uvicorn.workers.UvicornWorker --max-requests 10000 --graceful-timeout 180
+CMD exec gunicorn main:app -b 0.0.0.0:8000 -w 1 -k uvicorn.workers.UvicornWorker --max-requests 10000 --timeout 180 --graceful-timeout 180
+
+VOLUME /data
