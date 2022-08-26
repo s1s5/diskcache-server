@@ -591,7 +591,7 @@ testing = ["xmlschema", "requests", "pygments (>=2.7.2)", "nose", "mock", "hypot
 name = "pyyaml"
 version = "6.0"
 description = "YAML parser and emitter for Python"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.6"
 
@@ -695,6 +695,14 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "types-pyyaml"
+version = "6.0.11"
+description = "Typing stubs for PyYAML"
+category = "dev"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "types-requests"
 version = "2.28.8"
 description = "Typing stubs for requests"
@@ -782,7 +790,7 @@ h11 = ">=0.9.0,<1"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "a1f2d5533b7f0b97105a8980791ef326c01135d917dd0a980382f85e736c33dc"
+content-hash = "48c731526f8bbd71fb2164dc43b7e34b0b19eb6cda657ef75c8463b2b65719ec"
 
 [metadata.files]
 aiofiles = [
@@ -1090,6 +1098,7 @@ tomli = [
     {file = "tomli-2.0.1.tar.gz", hash = "sha256:de526c12914f0c550d15924c62d72abc48d6fe7364aa87328337a31007fe8a4f"},
 ]
 types-aiofiles = []
+types-pyyaml = []
 types-requests = []
 types-urllib3 = []
 typing-extensions = [
