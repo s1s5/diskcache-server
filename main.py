@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import io
 import logging
+import logging.config
 import os
 import pickle
 import re
@@ -14,6 +15,7 @@ from typing import Dict, Optional
 
 import aiofiles
 import aiofiles.os
+import yaml
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Gauge, generate_latest
@@ -197,7 +199,7 @@ _cache_volume = Gauge("diskcache_cache_volume", "total size of cache on disk")
 
 VALUE_SIZE_LIMIT = eval(os.environ.get("VALUE_SIZE_LIMIT", "300 << 20"))
 DEFAULT_EXPIRE = eval(os.environ.get("DEFAULT_EXPIRE", "24 * 60 * 60"))  # 1day
-RESPONSE_CHUNK_SIZE = 4 << 20
+RESPONSE_CHUNK_SIZE = 1 << 18
 PUT_TIMEOUT = eval(os.environ.get("REQUEST_TIMEOUT", "3 * 60"))  # 3min
 
 EXPIRE_HEADER = "x-diskcache-expire"
@@ -208,7 +210,7 @@ async def read_all(opened_file):
         yield opened_file
     else:
         async with opened_file as fp:
-            while chunk := await fp.read(1 << 18):
+            while chunk := await fp.read(RESPONSE_CHUNK_SIZE):
                 yield chunk
 
 
@@ -299,3 +301,7 @@ def metrics(request: Request):
 
 
 PrometheusInstrumentator().instrument(app)
+
+logging_config = yaml.safe_load(os.environ.get("LOGGING_CONFIG", ""))
+if logging_config:
+    logging.config.dictConfig(logging_config)

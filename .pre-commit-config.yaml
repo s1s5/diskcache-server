@@ -36,6 +36,7 @@ repos:
         additional_dependencies:
           - types-aiofiles
           - types-requests
+          - types-PyYAML
 
   - repo: https://github.com/psf/black
     rev: '22.3.0'
