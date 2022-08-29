@@ -197,6 +197,7 @@ _cache_misses = Counter("diskcache_cache_misses", "num cache misses")
 _cache_len = Gauge("diskcache_cache_len", "Count of items in cache including expired items")
 _cache_volume = Gauge("diskcache_cache_volume", "total size of cache on disk")
 
+DEBUG = eval(os.environ.get("DEBUG", "False"))
 VALUE_SIZE_LIMIT = eval(os.environ.get("VALUE_SIZE_LIMIT", "300 << 20"))
 DEFAULT_EXPIRE = eval(os.environ.get("DEFAULT_EXPIRE", "24 * 60 * 60"))  # 1day
 RESPONSE_CHUNK_SIZE = 1 << 18
@@ -305,3 +306,18 @@ PrometheusInstrumentator().instrument(app)
 logging_config = yaml.safe_load(os.environ.get("LOGGING_CONFIG", ""))
 if logging_config:
     logging.config.dictConfig(logging_config)
+
+if DEBUG:
+    import tracemalloc
+
+    tracemalloc.start()
+
+    @app.get("/-/tracemalloc/")
+    def get_tracemalloc():
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.statistics("lineno")
+        sio = io.StringIO()
+        for stat in top_stats[:50]:
+            print(stat, file=sio)
+
+        return Response(sio.getvalue())
