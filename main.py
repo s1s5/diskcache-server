@@ -321,3 +321,19 @@ if DEBUG:
             print(stat, file=sio)
 
         return Response(sio.getvalue())
+
+
+@app.get("/-/gc/")
+def run_gc():
+    import gc
+
+    sio = io.StringIO()
+    print(f"gc.isenabled()={gc.isenabled()}", file=sio)
+    print(f"gc.collect()={gc.collect()}", file=sio)
+    return Response(sio.getvalue())
+
+
+@app.get("/-/closecon/")
+def close_db_connection():
+    _cache.close()
+    return Response("close db")
