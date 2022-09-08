@@ -215,59 +215,6 @@ async def read_all(opened_file):
                 yield chunk
 
 
-@app.get("/{name}")
-async def get_raw(name: str, request: Request) -> Response:
-    value, _expire, _tag = await asyncio.to_thread(_cache.get, name, read=True, expire_time=True, tag=True)
-
-    expire = datetime.datetime.fromtimestamp(_expire, datetime.timezone.utc) if _expire else None
-    tag = pickle.loads(_tag) if _tag else {}
-    headers = dict(**tag)
-    if expire:
-        headers["Expire"] = expire.strftime(DATETIME_FORMAT)
-
-    if value is None:
-        raise HTTPException(status_code=404)
-    elif tag.get("Etag", "no-etag-found") == request.headers.get("If-None-Match"):
-        return Response(status_code=304, headers=headers)
-
-    return StreamingResponse(read_all(value), headers=headers)
-
-
-@app.put("/{name}")
-async def put_raw(name: str, request: Request) -> Response:
-    expire = int(request.headers.get(EXPIRE_HEADER, DEFAULT_EXPIRE))
-    try:
-        if "content-length" in request.headers:
-            content_length = int(request.headers["content-length"])
-        else:
-            content_length = None
-    except ValueError:
-        return Response(content="invalid Content-Length value", status_code=400)
-
-    try:
-        await _cache.aset(
-            name,
-            request.stream(),
-            expire=expire,
-            read=True,
-            tag=create_tag_from_request(request),
-            content_length=content_length,
-        )
-    except ValueSizeLimitExceeded:
-        return Response(content="size limit exceeded", status_code=400)
-    except SizeDifferentException:
-        return Response(content="content-length different", status_code=400)
-
-    return Response(status_code=200)
-
-
-@app.delete("/{name}")
-def delete_content(name: str) -> Response:
-    if not _cache.delete(name):
-        return Response(status_code=404)
-    return Response(status_code=200)
-
-
 @app.post("/-/flushall/")
 def clear_all_content():
     return Response(status_code=200, content=f"clear: {_cache.clear()}")
@@ -299,6 +246,65 @@ def metrics(request: Request):
         resp = Response(content=generate_latest(REGISTRY))
         resp.headers["Content-Type"] = CONTENT_TYPE_LATEST
     return resp
+
+
+@app.get("/{name:path}")
+async def get_raw(name: str, request: Request) -> Response:
+    value, _expire, _tag = await asyncio.to_thread(_cache.get, name, read=True, expire_time=True, tag=True)
+
+    expire = datetime.datetime.fromtimestamp(_expire, datetime.timezone.utc) if _expire else None
+    tag = pickle.loads(_tag) if _tag else {}
+    headers = dict(**tag)
+    if expire:
+        headers["Expire"] = expire.strftime(DATETIME_FORMAT)
+
+    if value is None:
+        raise HTTPException(status_code=404)
+    elif tag.get("Etag", "no-etag-found") == request.headers.get("If-None-Match"):
+        return Response(status_code=304, headers=headers)
+
+    return StreamingResponse(read_all(value), headers=headers)
+
+
+@app.put("/{name:path}")
+async def put_raw(name: str, request: Request) -> Response:
+    if name.startswith("-/"):
+        return Response(content="path must not start with '-/'", status_code=400)
+
+    expire = int(request.headers.get(EXPIRE_HEADER, DEFAULT_EXPIRE))
+    try:
+        if "content-length" in request.headers:
+            content_length = int(request.headers["content-length"])
+        else:
+            content_length = None
+    except ValueError:
+        return Response(content="invalid Content-Length value", status_code=400)
+
+    try:
+        await _cache.aset(
+            name,
+            request.stream(),
+            expire=expire,
+            read=True,
+            tag=create_tag_from_request(request),
+            content_length=content_length,
+        )
+    except ValueSizeLimitExceeded:
+        return Response(content="size limit exceeded", status_code=400)
+    except SizeDifferentException:
+        return Response(content="content-length different", status_code=400)
+
+    return Response(status_code=200)
+
+
+@app.delete("/{name:path}")
+def delete_content(name: str) -> Response:
+    if name.startswith("-/"):
+        return Response(content="path must not start with '-/'", status_code=400)
+
+    if not _cache.delete(name):
+        return Response(status_code=404)
+    return Response(status_code=200)
 
 
 PrometheusInstrumentator().instrument(app)
