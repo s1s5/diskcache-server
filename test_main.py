@@ -68,6 +68,60 @@ def test_put_delete_get(patch_cache):
     assert response.status_code == 404
 
 
+def test_get_keys(patch_cache):  # noqa: R701
+    client.put("/a", data=b"a")
+    client.put("/b", data=b"b")
+    client.put("/c", data=b"c")
+    client.put("/b2", data=b"b2")
+
+    r = client.post("/-/keys/", json={"max_num": 100}).json()
+    assert [x["key"] for x in r] == ["a", "b", "c", "b2"]
+
+    r = client.post("/-/keys/", json={"max_num": 1}).json()
+    assert [x["key"] for x in r] == ["a"]
+
+    r = client.post(
+        "/-/keys/", json={"max_num": 1, "key": r[0]["key"], "store_time": r[0]["store_time"]}
+    ).json()
+    assert [x["key"] for x in r] == ["b"]
+
+    r = client.post("/-/keys/", json={"max_num": 100, "prefix": "b"}).json()
+    assert [x["key"] for x in r] == ["b", "b2"]
+
+    r = client.post(
+        "/-/keys/", json={"max_num": 100, "key": r[0]["key"], "store_time": r[0]["store_time"], "prefix": "b"}
+    ).json()
+    assert [x["key"] for x in r] == ["b2"]
+
+    for i in [1, 2, 3, 4, 100]:
+        r = client.post("/-/keys/", json={"max_num": 100, "load_limit": i}).json()
+        assert [x["key"] for x in r] == ["a", "b", "c", "b2"]
+
+        r = client.post("/-/keys/", json={"max_num": 1, "load_limit": i}).json()
+        assert [x["key"] for x in r] == ["a"]
+
+        r = client.post(
+            "/-/keys/",
+            json={"max_num": 1, "key": r[0]["key"], "store_time": r[0]["store_time"], "load_limit": i},
+        ).json()
+        assert [x["key"] for x in r] == ["b"]
+
+        r = client.post("/-/keys/", json={"max_num": 100, "prefix": "b", "load_limit": i}).json()
+        assert [x["key"] for x in r] == ["b", "b2"]
+
+        r = client.post(
+            "/-/keys/",
+            json={
+                "max_num": 100,
+                "key": r[0]["key"],
+                "store_time": r[0]["store_time"],
+                "prefix": "b",
+                "load_limit": i,
+            },
+        ).json()
+        assert [x["key"] for x in r] == ["b2"]
+
+
 def test_skip_download(patch_cache):
     response = client.put("/data", data=b"hello world")
     assert response.status_code == 200

@@ -11,6 +11,7 @@ import re
 import sqlite3
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 import aiofiles
@@ -171,6 +172,56 @@ class CustomCache(diskcache.Cache):
 
             return True
 
+    def iterkeys2(
+        self,
+        max_num: int,
+        key: Optional[str] = None,
+        store_time: Optional[float] = None,
+        prefix: Optional[str] = None,
+        load_limit: Optional[int] = None,
+    ):
+        sql = self._sql
+        limit = load_limit if load_limit else 100
+
+        if prefix:
+            select_like = f"WHERE key like '{prefix}%'"
+            iterate_like = f"AND key like '{prefix}%'"
+        else:
+            select_like = ""
+            iterate_like = ""
+
+        select = (
+            f"SELECT key, store_time FROM Cache {select_like}" " ORDER BY store_time ASC, key ASC LIMIT 1"
+        )
+        iterate = (
+            "SELECT key, store_time FROM Cache"
+            f" WHERE ((store_time = ? AND key > ?) OR store_time > ?) {iterate_like}"
+            " ORDER BY store_time ASC, key ASC LIMIT ?"
+        )
+
+        if key is None:
+            row = sql(select).fetchall()
+
+            if row:
+                ((key, store_time),) = row
+            else:
+                return
+            max_num -= 1
+            yield key, store_time
+
+        while max_num > 0:
+            rows = sql(iterate, (store_time, key, store_time, limit)).fetchall()
+
+            if not rows:
+                break
+
+            for key, store_time in rows:
+                yield key, store_time
+
+                max_num -= 1
+                if max_num <= 0:
+                    break
+
 
 _cache = CustomCache(
     directory=os.environ.get("CACHE_DIRECTORY", "/tmp"),
@@ -246,6 +297,34 @@ def metrics(request: Request):
         resp = Response(content=generate_latest(REGISTRY))
         resp.headers["Content-Type"] = CONTENT_TYPE_LATEST
     return resp
+
+
+@dataclass
+class GetKeysArg:
+    max_num: int
+    key: Optional[str] = None
+    store_time: Optional[float] = None
+    prefix: Optional[str] = None
+    load_limit: Optional[int] = None
+
+
+@app.post("/-/keys/")
+def get_keys(arg: GetKeysArg):
+    if arg.load_limit is not None and arg.load_limit <= 0:
+        raise HTTPException(status_code=400)
+    return [
+        {
+            "key": key,
+            "store_time": store_time,
+        }
+        for key, store_time in _cache.iterkeys2(
+            max_num=arg.max_num,
+            key=arg.key,
+            store_time=arg.store_time,
+            prefix=arg.prefix,
+            load_limit=arg.load_limit,
+        )
+    ]
 
 
 @app.get("/{name:path}")
