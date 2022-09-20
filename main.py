@@ -266,6 +266,38 @@ async def read_all(opened_file):
                 yield chunk
 
 
+if DEBUG:
+    import tracemalloc
+
+    tracemalloc.start()
+
+    @app.get("/-/tracemalloc/")
+    def get_tracemalloc():
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.statistics("lineno")
+        sio = io.StringIO()
+        for stat in top_stats[:50]:
+            print(stat, file=sio)
+
+        return Response(sio.getvalue())
+
+
+@app.get("/-/gc/")
+def run_gc():
+    import gc
+
+    sio = io.StringIO()
+    print(f"gc.isenabled()={gc.isenabled()}", file=sio)
+    print(f"gc.collect()={gc.collect()}", file=sio)
+    return Response(sio.getvalue())
+
+
+@app.get("/-/closecon/")
+def close_db_connection():
+    _cache.close()
+    return Response("close db")
+
+
 @app.post("/-/flushall/")
 def clear_all_content():
     return Response(status_code=200, content=f"clear: {_cache.clear()}")
@@ -391,34 +423,3 @@ PrometheusInstrumentator().instrument(app)
 logging_config = yaml.safe_load(os.environ.get("LOGGING_CONFIG", ""))
 if logging_config:
     logging.config.dictConfig(logging_config)
-
-if DEBUG:
-    import tracemalloc
-
-    tracemalloc.start()
-
-    @app.get("/-/tracemalloc/")
-    def get_tracemalloc():
-        snapshot = tracemalloc.take_snapshot()
-        top_stats = snapshot.statistics("lineno")
-        sio = io.StringIO()
-        for stat in top_stats[:50]:
-            print(stat, file=sio)
-
-        return Response(sio.getvalue())
-
-
-@app.get("/-/gc/")
-def run_gc():
-    import gc
-
-    sio = io.StringIO()
-    print(f"gc.isenabled()={gc.isenabled()}", file=sio)
-    print(f"gc.collect()={gc.collect()}", file=sio)
-    return Response(sio.getvalue())
-
-
-@app.get("/-/closecon/")
-def close_db_connection():
-    _cache.close()
-    return Response("close db")
