@@ -1,5 +1,7 @@
 # import asyncio
+# import random
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from random import randbytes
 from time import time_ns
 
@@ -10,6 +12,7 @@ import requests
 def get_put(base_url: str, num_operation: int, byte_size: int):
     put_total, get_total, del_total = 0, 0, 0
     data = randbytes(byte_size)
+    url = ""
     for i in range(num_operation):
         key = uuid.uuid4().hex
         url = base_url + "/" + key
@@ -22,8 +25,13 @@ def get_put(base_url: str, num_operation: int, byte_size: int):
         response = requests.get(url)
         get_ed = time_ns()
 
-        assert response.status_code == 200
-        assert response.content == data
+        if response.status_code != 200:
+            print("Error")
+            break
+
+        if response.content != data:
+            print("content error")
+            break
 
         del_st = time_ns()
         requests.delete(url)
@@ -54,7 +62,8 @@ async def a_get_put(client: httpx.AsyncClient, base_url: str, num_operation: int
         get_st = time_ns()
         response = await client.get(url)
         get_ed = time_ns()
-
+        print(response.http_version)
+        print(response.headers)
         assert response.status_code == 200
         assert response.content == data
 
@@ -74,14 +83,17 @@ async def a_get_put(client: httpx.AsyncClient, base_url: str, num_operation: int
 
 
 async def amain():
-    base_url = "http://localhost:8108"
+    base_url = "http://localhost:8000"
     async with httpx.AsyncClient(http2=True) as client:
-        await a_get_put(client, base_url, 10, (1 << 15) - 1)
+        await a_get_put(client, base_url, 10, (1 << 14) - 1)
 
 
 def main():
-    base_url = "http://localhost:8108"
-    get_put(base_url, 10, 2 << 15)
+    base_url = "http://localhost:8000"
+    with ThreadPoolExecutor(max_workers=32) as pool:
+        for _ in range(1):
+            # pool.submit(get_put, base_url, 100, random.randint(1<<10, 10<<20))
+            pool.submit(get_put, base_url, 100 << 10, 10 << 20)
 
 
 if __name__ == "__main__":
