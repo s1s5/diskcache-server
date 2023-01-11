@@ -276,6 +276,14 @@ async def read_all(opened_file):
                 yield chunk
 
 
+async def _dispose(opened_file):
+    if isinstance(opened_file, bytes):
+        pass
+    else:
+        async with opened_file as _:
+            pass
+
+
 if DEBUG:
     import tracemalloc
 
@@ -297,6 +305,7 @@ async def trigger_error():
     division_by_zero = 1 / 0  # noqa
 
 
+@app.get("/-/gc")
 @app.get("/-/gc/")
 def run_gc():
     import gc
@@ -307,17 +316,20 @@ def run_gc():
     return Response(sio.getvalue())
 
 
+@app.get("/-/closecon")
 @app.get("/-/closecon/")
 def close_db_connection():
     _cache.close()
     return Response("close db")
 
 
+@app.post("/-/flushall")
 @app.post("/-/flushall/")
 def clear_all_content():
     return Response(status_code=200, content=f"clear: {_cache.clear()}")
 
 
+@app.get("/-/healthcheck")
 @app.get("/-/healthcheck/")
 def healthcheck():
     key = uuid.uuid4().hex
@@ -327,6 +339,7 @@ def healthcheck():
     return Response(status_code=200)
 
 
+@app.get("/-/metrics")
 @app.get("/-/metrics/")
 def metrics(request: Request):
     hits, misses = _cache.stats(enable=True, reset=True)
@@ -355,6 +368,7 @@ class GetKeysArg:
     load_limit: Optional[int] = None
 
 
+@app.post("/-/keys")
 @app.post("/-/keys/")
 def get_keys(arg: GetKeysArg):
     if arg.load_limit is not None and arg.load_limit <= 0:
@@ -372,6 +386,24 @@ def get_keys(arg: GetKeysArg):
             load_limit=arg.load_limit,
         )
     ]
+
+
+@app.head("/{name:path}")
+async def get_raw_head(name: str, request: Request) -> Response:
+    value, _expire, _tag = await asyncio.to_thread(_cache.get, name, read=True, expire_time=True, tag=True)
+
+    expire = datetime.datetime.fromtimestamp(_expire, datetime.timezone.utc) if _expire else None
+    tag = pickle.loads(_tag) if _tag else {}
+    headers = dict(**tag)
+    if expire:
+        headers["Expire"] = expire.strftime(DATETIME_FORMAT)
+
+    if value is None:
+        raise HTTPException(status_code=404)
+
+    await _dispose(value)
+
+    return Response(status_code=200, headers=headers)
 
 
 @app.get("/{name:path}")

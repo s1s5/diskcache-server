@@ -14,7 +14,7 @@ ENV PYTHONFAULTHANDLER=1 \
     POETRY_VIRTUALENVS_CREATE=false \
     PATH="$PATH:/root/.poetry/bin:/runtime/bin" \
     PYTHONPATH="$PYTHONPATH:/runtime/lib/python3.10/site-packages" \
-    POETRY_VERSION=1.1.13
+    POETRY_VERSION=1.3.2
 
 WORKDIR /opt
 

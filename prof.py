@@ -93,7 +93,7 @@ def main():
     with ThreadPoolExecutor(max_workers=32) as pool:
         for _ in range(1):
             # pool.submit(get_put, base_url, 100, random.randint(1<<10, 10<<20))
-            pool.submit(get_put, base_url, 100 << 10, 10 << 20)
+            pool.submit(get_put, base_url, 100, 10 << 20)
 
 
 if __name__ == "__main__":
