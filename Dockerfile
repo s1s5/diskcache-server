@@ -38,6 +38,6 @@ COPY --from=builder /runtime /usr/local
 COPY main.py ./
 
 USER app
-CMD exec gunicorn main:app -b 0.0.0.0:8000 -w 1 -k uvicorn.workers.UvicornWorker --max-requests 10000 --timeout 180 --graceful-timeout 180
+CMD exec gunicorn main:app -b 0.0.0.0:8000 -w 1 -k uvicorn.workers.UvicornWorker --timeout 300 --graceful-timeout 300
 
 VOLUME /data
