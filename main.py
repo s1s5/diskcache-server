@@ -16,6 +16,7 @@ from typing import Dict, Optional
 
 import aiofiles
 import aiofiles.os
+import sentry_sdk
 import yaml
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -23,6 +24,15 @@ from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Gauge, gen
 from prometheus_fastapi_instrumentator import Instrumentator as PrometheusInstrumentator
 
 import diskcache
+
+if "SENTRY_DSN" in os.environ:
+    sentry_sdk.init(
+        os.environ["SENTRY_DSN"],
+        integrations=[],
+        release=os.environ.get("REVISION", "unknown"),
+        traces_sample_rate=0.0,
+    )
+
 
 app = FastAPI()
 
@@ -280,6 +290,11 @@ if DEBUG:
             print(stat, file=sio)
 
         return Response(sio.getvalue())
+
+
+@app.get("/-/sentry-debug")
+async def trigger_error():
+    division_by_zero = 1 / 0  # noqa
 
 
 @app.get("/-/gc/")
