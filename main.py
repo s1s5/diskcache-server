@@ -426,6 +426,7 @@ async def get_raw(name: str, request: Request) -> Response:
 
 @app.put("/{name:path}")
 async def put_raw(name: str, request: Request) -> Response:
+    _cache.cull()  # Cull items from cache until volume is less than size limit.
     if name.startswith("-/"):
         return Response(content="path must not start with '-/'", status_code=400)
 
